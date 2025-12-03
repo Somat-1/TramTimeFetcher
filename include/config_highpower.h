@@ -1,10 +1,14 @@
+// High Power WiFi Configuration for Troubleshooting
+// Use this if you're experiencing AUTH_EXPIRE or TIMEOUT errors
+// Copy this to config.h and rebuild
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// WiFi Configuration
+// WiFi Configuration - HIGH POWER VERSION
 #define WIFI_SSID "Ceviche2"
 #define WIFI_PASSWORD "CapitanoAmericano55"
-#define WIFI_POWER_DBM 19  // Increased to 19dB for better connection (was 17)
+#define WIFI_POWER_DBM 19  // Maximum power for better connection
 #define LOCK_BSSID true     // Lock BSSID once connected
 
 // DRGL API Configuration (simpler than OVapi)
@@ -13,10 +17,8 @@
 #define STOP_NAME "Statenkwartier"
 
 // Update intervals (milliseconds)
-#define UPDATE_INTERVAL 5000  // Update every 5 seconds (fetch as often as possible)
+#define UPDATE_INTERVAL 30000  // Update every 30 seconds
 #define WIFI_RECONNECT_INTERVAL 10000  // Try to reconnect every 10 seconds
-#define DISPLAY_TIMEOUT 300000  // Display timeout: 5 minutes (300,000 ms)
-#define TIME_ADJUSTMENT_MINUTES -1  // Subtract 1 minute from displayed times
 
 // Display Configuration
 #define SDA_PIN 9

@@ -1,15 +1,17 @@
 #ifndef DISPLAY_MANAGER_H
 #define DISPLAY_MANAGER_H
 
-#include <TFT_eSPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include "ov_api.h"
 #include <vector>
 
 class DisplayManager {
 private:
-    TFT_eSPI tft;
-    int screenWidth;
-    int screenHeight;
+    Adafruit_SSD1306 display;
+    int currentPage;
+    int totalPages;
     bool needsRefresh;
 
 public:
@@ -22,7 +24,10 @@ public:
     void showError(const String& message);
     void showUpdating();
     void clear();
-    void setBrightness(uint8_t brightness);
+    bool isTouched();
+    void turnOn();
+    void turnOff();
+    bool isDisplayOn();
 };
 
 #endif // DISPLAY_MANAGER_H

@@ -16,11 +16,12 @@ struct Departure {
 class OVApi {
 private:
     String baseUrl;
-    String stopAreaCode;
+    String stopCode;
     std::vector<Departure> departures;
 
-    bool parseJsonResponse(const String& json);
+    bool parseHtmlResponse(const String& html);
     String makeHttpRequest(const String& url);
+    String extractText(const String& html, const String& startTag, const String& endTag);
 
 public:
     OVApi(const String& baseUrl, const String& stopCode);

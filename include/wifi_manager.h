@@ -19,6 +19,7 @@ public:
     void reconnect();
     void lockCurrentBSSID();
     void printConnectionInfo();
+    void scanNetworks(const char* targetSSID);
 };
 
 #endif // WIFI_MANAGER_H

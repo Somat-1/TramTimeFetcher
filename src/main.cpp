@@ -1,3 +1,4 @@
+// filepath: /Users/tomasvalentinas/Documents/PlatformIO/Projects/TramReader/src/main.cpp
 #include <Arduino.h>
 #include <time.h>
 #include "config.h"
@@ -7,13 +8,15 @@
 
 // Global objects
 WiFiManager wifiManager(WIFI_POWER_DBM);
-OVApi ovApi(OV_API_BASE_URL, STOP_AREA_CODE);
+OVApi ovApi(DRGL_BASE_URL, STOP_CODE);
 DisplayManager display;
 
 // State variables
 unsigned long lastUpdate = 0;
 unsigned long lastTouchCheck = 0;
+unsigned long lastTouchTime = 0;
 bool touchPressed = false;
+bool displayIsOn = false;
 
 void setupTime() {
     // Configure time (Amsterdam timezone: CET/CEST)
@@ -39,35 +42,46 @@ void setupTime() {
 
 void updateDepartures() {
     Serial.println("\n=== Updating departures ===");
-    display.showUpdating();
     
     if (ovApi.fetchDepartures()) {
         ovApi.printDepartures();
-        std::vector<Departure> departures = ovApi.getDepartures(MAX_DEPARTURES_DISPLAY);
-        display.showDepartures(departures);
+        
+        // Only update display if it's on
+        if (displayIsOn) {
+            display.showUpdating();
+            std::vector<Departure> departures = ovApi.getDepartures(MAX_DEPARTURES_DISPLAY);
+            display.showDepartures(departures);
+        }
         lastUpdate = millis();
     } else {
         Serial.println("Failed to fetch departures");
-        display.showError("Failed to fetch data");
-        delay(2000);
+        if (displayIsOn) {
+            display.showError("Failed to fetch data");
+            delay(2000);
+        }
     }
 }
 
 void handleTouch() {
-    // Check touch sensor (button on GPIO 0 for C3)
-    unsigned long now = millis();
-    if (now - lastTouchCheck < 200) {
-        return; // Debounce
-    }
-    lastTouchCheck = now;
-    
-    int touchState = digitalRead(TOUCH_PIN);
-    if (touchState == LOW && !touchPressed) {
-        touchPressed = true;
-        Serial.println("Touch detected - forcing update");
+    if (display.isTouched()) {
+        Serial.println("Touch detected - turning on display for 5 minutes");
+        lastTouchTime = millis();
+        
+        if (!displayIsOn) {
+            display.turnOn();
+            displayIsOn = true;
+        }
+        
+        // Force immediate update
         updateDepartures();
-    } else if (touchState == HIGH) {
-        touchPressed = false;
+    }
+}
+
+void checkDisplayTimeout() {
+    if (displayIsOn && (millis() - lastTouchTime > DISPLAY_TIMEOUT)) {
+        Serial.println("Display timeout - turning off");
+        display.turnOff();
+        displayIsOn = false;
     }
 }
 
@@ -77,14 +91,14 @@ void setup() {
     
     Serial.println("\n\n=== Tram Times Display ===");
     Serial.println("ESP32-C3 Supermini");
-    Serial.println("Statenlaan, Den Haag\n");
+    Serial.println("Statenkwartier, Den Haag\n");
     
-    // Initialize touch button
-    pinMode(TOUCH_PIN, INPUT_PULLUP);
-    
-    // Initialize display
+    // Initialize display (touch sensor is initialized inside)
     Serial.println("Initializing display...");
     display.begin();
+    displayIsOn = true;  // Start with display on
+    lastTouchTime = millis();  // Set initial touch time
+    
     display.showWelcomeScreen();
     delay(2000);
     
@@ -102,25 +116,49 @@ void setup() {
         display.showError("WiFi connection failed");
         Serial.println("Failed to connect to WiFi");
     }
+    
+    Serial.println("\n=== Display Configuration ===");
+    Serial.println("Display will turn off after 5 minutes of no touch");
+    Serial.println("Touch sensor on GPIO 20 to wake display");
+    Serial.println("Data updates every 5 seconds");
+    Serial.println("Times shown are -1 minute from scheduled");
+    Serial.println("==============================\n");
 }
 
 void loop() {
-    // Check WiFi connection
-    if (!wifiManager.isConnected()) {
-        Serial.println("WiFi disconnected!");
-        display.showError("WiFi disconnected");
-        wifiManager.reconnect();
-        delay(1000);
-        return;
+    static unsigned long lastConnectionCheck = 0;
+    static int disconnectCount = 0;
+    
+    // Check WiFi connection every 5 seconds (not every loop)
+    unsigned long now = millis();
+    if (now - lastConnectionCheck > 5000) {
+        lastConnectionCheck = now;
+        
+        if (!wifiManager.isConnected()) {
+            disconnectCount++;
+            Serial.printf("\n!!! WiFi DISCONNECTED (count: %d) !!!\n", disconnectCount);
+            Serial.printf("Uptime: %.1f minutes\n", now / 60000.0);
+            Serial.printf("Last successful update: %.1f seconds ago\n", (now - lastUpdate) / 1000.0);
+            
+            if (displayIsOn) {
+                display.showError("WiFi disconnected");
+            }
+            wifiManager.reconnect();
+            delay(2000);
+            return;
+        }
     }
     
-    // Auto-update every UPDATE_INTERVAL
+    // Auto-update every UPDATE_INTERVAL (5 seconds - fetch as often as possible)
     if (millis() - lastUpdate > UPDATE_INTERVAL) {
         updateDepartures();
     }
     
     // Check for manual update via touch
     handleTouch();
+    
+    // Check if display should timeout
+    checkDisplayTimeout();
     
     delay(100);
 }

@@ -1,25 +1,26 @@
 # Tram Times Display - ESP32-C3 Supermini
 
-A real-time tram departure display for Statenlaan station in Den Haag, Netherlands using the OV API.
+A real-time tram departure display for Statenkwartier (Tram 17) in Den Haag, Netherlands using DRGL (https://drgl.nl).
 
 ## Hardware Requirements
 
 - ESP32-C3 Supermini
-- TFT Display (ST7789, 135x240px)
-- Touch sensor/button (GPIO 0)
+- SSD1306 OLED Display (128x64px, I2C)
+  - SDA: GPIO 9
+  - SCL: GPIO 8
+- Touch sensor (GPIO 20)
 
 ## Features
 
-- **Real-time tram departures** from OV API (https://v0.ovapi.nl)
+- **Real-time tram departures** from DRGL (https://drgl.nl)
 - **WiFi connectivity** with power limiting (17dBm) and BSSID locking
-- **Color-coded display**:
-  - Red: Departing soon (< 5 min)
-  - Green: Departing soon (5-10 min)
-  - Cyan: Later departures
-  - Yellow: Line numbers
-  - Grey asterisk (*): Scheduled times (not real-time)
+- **Compact OLED display** showing:
+  - Line number
+  - Destination (truncated to fit)
+  - Departure time (minutes or HH:MM)
+  - Real-time indicator (*)
 - **Auto-refresh** every 30 seconds
-- **Manual refresh** via touch button
+- **Manual refresh** via touch sensor
 - **Time synchronization** via NTP
 
 ## Configuration
@@ -36,18 +37,15 @@ All configuration is in `include/config.h`:
 
 ### Stop Information
 ```cpp
-#define STOP_AREA_CODE "732"  // Statenlaan
-#define TIMING_POINT_NAME "Statenlaan"
+#define STOP_CODE "NL:S:32000903"  // Statenkwartier (spoor 1)
+#define STOP_NAME "Statenkwartier"
 ```
 
 ### Display Pin Configuration
-Current pin mapping (adjust in `platformio.ini` if needed):
-- MOSI: GPIO 7
-- SCLK: GPIO 6
-- CS: GPIO 10
-- DC: GPIO 2
-- RST: GPIO 3
-- Touch: GPIO 0 (built-in button)
+- SDA: GPIO 9
+- SCL: GPIO 8
+- Touch: GPIO 20
+- Screen Address: 0x3C
 
 ## Project Structure
 
@@ -77,28 +75,54 @@ TramReader/
 
 ## API Information
 
-The project uses the OV API (Open Public Transport API):
-- Base URL: https://v0.ovapi.nl
-- Endpoint: `/stopareacode/{code}`
-- Stop Area Code: 732 (Statenlaan, Den Haag)
+The project uses DRGL (Dutch Real-time Public Transport):
+- Base URL: https://drgl.nl/stop/
+- Stop Code: NL:S:32000903 (Statenkwartier, Den Haag)
+- Shows Tram 17 to Wateringen
+
+**Why DRGL instead of OVapi?**
+- Simpler HTML parsing (no complex JSON)
+- More reliable real-time data
+- Direct stop lookup without complicated timing point codes
 
 ## Display Information
 
-The display shows:
-- **Header**: Station name (orange background)
-- **Line number**: Yellow, left column
-- **Destination**: White, middle column
+The 128x64 OLED display shows:
+- **Header**: Station name (top line with underline)
+- **Line number**: 3 chars max, left column
+- **Destination**: Truncated to 10 chars, middle
 - **Time**: Right column
-  - Shows minutes for departures < 60 min
+  - Shows minutes for departures < 60 min (e.g., "5m")
   - Shows HH:MM for later departures
   - "NOW" for immediate departures
-- **Footer**: Legend for scheduled times
+- **Asterisk (*)**: Indicates scheduled (non-real-time) data
+- **Footer**: "Touch:more" if more departures available
 
 ## Troubleshooting
 
 ### WiFi Connection Issues
-- Check SSID and password in `config.h`
-- Verify 2.4GHz WiFi is available (ESP32 doesn't support 5GHz)
+
+**Error: AUTH_EXPIRE (Reason 2) or TIMEOUT (Reason 39)**
+- The WiFi power is limited to 17dBm which may be too low
+- Try temporarily increasing to 19.5dBm in `config.h`:
+  ```cpp
+  #define WIFI_POWER_DBM 19  // Increase from 17
+  ```
+- Once connected reliably, reduce back to 17dBm
+- Ensure you're close to the WiFi router during initial setup
+- Verify the password is correct (case-sensitive)
+- Check that 2.4GHz WiFi is available (ESP32 doesn't support 5GHz)
+
+### Display Issues
+- **No display**: Check I2C connections (SDA=9, SCL=8)
+- **Wrong address**: Try 0x3D if 0x3C doesn't work
+- **Garbled text**: Verify screen dimensions (128x64)
+
+### No Tram Data
+- Check WiFi connection status in serial monitor
+- Verify HTTPS works (WiFiClientSecure with setInsecure())
+- Test DRGL URL manually: https://drgl.nl/stop/NL:S:32000903
+- Check if Tram 17 is running (service hours)
 - Monitor serial output for connection details
 
 ### Display Issues
