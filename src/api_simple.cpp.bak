@@ -1,0 +1,122 @@
+#include "api.h"
+#include "config.h"
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <time.h>
+
+int lastHttpCode = 0;
+int lastHtmlSize = 0;
+int lastFoundEntries = 0;
+
+std::vector<Tram> fetchTrams() {
+    std::vector<Tram> trams;
+    
+    Serial.println("\n=== FETCH START ===");
+    
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    
+    String url = "https://drgl.nl/stop/" + String(STOP_CODE);
+    
+    if (!http.begin(client, url)) {
+        Serial.println("HTTP begin failed");
+        lastHttpCode = -1;
+        return trams;
+    }
+    
+    lastHttpCode = http.GET();
+    Serial.printf("HTTP: %d\n", lastHttpCode);
+    
+    if (lastHttpCode != 200) {
+        http.end();
+        return trams;
+    }
+    
+    String html = http.getString();
+    http.end();
+    lastHtmlSize = html.length();
+    Serial.printf("HTML size: %d\n", lastHtmlSize);
+    
+    // Get current time
+    time_t now = time(nullptr);
+    struct tm* ti = localtime(&now);
+    int nowMin = ti->tm_hour * 60 + ti->tm_min;
+    Serial.printf("Time: %02d:%02d\n", ti->tm_hour, ti->tm_min);
+    
+    // Simple parsing: find all times first
+    lastFoundEntries = 0;
+    int pos = 0;
+    
+    while (pos < html.length() && trams.size() < 10) {
+        // Find "ott-departure-time"
+        pos = html.indexOf("ott-departure-time", pos);
+        if (pos == -1) break;
+        
+        // Extract time
+        int start = html.indexOf('>', pos) + 1;
+        int end = html.indexOf('<', start);
+        if (start <= 0 || end <= 0) {
+            pos++;
+            continue;
+        }
+        
+        String timeStr = html.substring(start, end);
+        timeStr.trim();
+        
+        // Find line number
+        int linePos = html.indexOf("ott-linecode", end);
+        if (linePos == -1 || linePos > end + 500) {
+            pos = end;
+            continue;
+        }
+        
+        int lineStart = html.indexOf('>', linePos) + 1;
+        int lineEnd = html.indexOf('<', lineStart);
+        String line = html.substring(lineStart, lineEnd);
+        line.trim();
+        
+        // Find destination
+        int destPos = html.indexOf("ott-destination", lineEnd);
+        if (destPos == -1 || destPos > lineEnd + 200) {
+            pos = lineEnd;
+            continue;
+        }
+        
+        int destStart = html.indexOf('>', destPos) + 1;
+        int destEnd = html.indexOf('<', destStart);
+        String dest = html.substring(destStart, destEnd);
+        dest.trim();
+        
+        lastFoundEntries++;
+        
+        // Parse time
+        int h = 0, m = 0;
+        if (sscanf(timeStr.c_str(), "%d:%d", &h, &m) == 2) {
+            int depMin = h * 60 + m;
+            int diff = depMin - nowMin;
+            if (diff < 0) diff += 1440;
+            
+            // Add if within 60 minutes
+            if (diff < 60) {
+                Tram t;
+                t.line = line;
+                t.dest = dest;
+                t.mins = diff;
+                trams.push_back(t);
+                Serial.printf("#%d: %s to %s in %dm\n", trams.size(), line.c_str(), dest.c_str(), diff);
+            }
+        }
+        
+        pos = destEnd;
+    }
+    
+    Serial.printf("Found %d entries, %d trams\n", lastFoundEntries, trams.size());
+    Serial.println("=== FETCH END ===\n");
+    
+    return trams;
+}
+
+int getLastHttpCode() { return lastHttpCode; }
+int getLastHtmlSize() { return lastHtmlSize; }
+int getLastFoundEntries() { return lastFoundEntries; }

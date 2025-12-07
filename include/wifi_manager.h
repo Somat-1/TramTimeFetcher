@@ -10,6 +10,8 @@ private:
     bool bssidLocked;
     unsigned long lastReconnectAttempt;
     int wifiPowerDbm;
+    
+    void scanNetworks(const char* targetSSID);
 
 public:
     WiFiManager(int powerDbm = 17);
@@ -19,7 +21,6 @@ public:
     void reconnect();
     void lockCurrentBSSID();
     void printConnectionInfo();
-    void scanNetworks(const char* targetSSID);
 };
 
 #endif // WIFI_MANAGER_H

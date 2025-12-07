@@ -13,6 +13,8 @@ private:
     int currentPage;
     int totalPages;
     bool needsRefresh;
+    bool displayOn;
+    unsigned long lastTouchTime;
 
 public:
     DisplayManager();
@@ -28,6 +30,7 @@ public:
     void turnOn();
     void turnOff();
     bool isDisplayOn();
+    void checkTimeout();
 };
 
 #endif // DISPLAY_MANAGER_H

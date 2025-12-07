@@ -1,30 +1,32 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// WiFi Configuration
 #define WIFI_SSID "Ceviche2"
 #define WIFI_PASSWORD "CapitanoAmericano55"
-#define WIFI_POWER_DBM 19  // Increased to 19dB for better connection (was 17)
-#define LOCK_BSSID true     // Lock BSSID once connected
-
-// DRGL API Configuration (simpler than OVapi)
-#define DRGL_BASE_URL "https://drgl.nl/stop/"
-#define STOP_CODE "NL:S:32000903"  // Statenkwartier (spoor 1)
+#define STOP_CODE "NL:S:32000903"
 #define STOP_NAME "Statenkwartier"
+#define UPDATE_INTERVAL 20000
 
-// Update intervals (milliseconds)
-#define UPDATE_INTERVAL 5000  // Update every 5 seconds (fetch as often as possible)
-#define WIFI_RECONNECT_INTERVAL 10000  // Try to reconnect every 10 seconds
-#define DISPLAY_TIMEOUT 300000  // Display timeout: 5 minutes (300,000 ms)
-#define TIME_ADJUSTMENT_MINUTES -1  // Subtract 1 minute from displayed times
+// Weather API (Open-Meteo - no API key needed!)
+#define WEATHER_LAT "52.0767"
+#define WEATHER_LON "4.2986"
+#define WEATHER_UPDATE_INTERVAL 600000  // 10 minutes
 
-// Display Configuration
-#define SDA_PIN 9
-#define SCL_PIN 8
-#define TOUCH_PIN 20
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define SCREEN_ADDRESS 0x3C
-#define MAX_DEPARTURES_DISPLAY 4  // Number of departures to show on screen (limited by small screen)
+// Display pins (corrected to match actual wiring)
+#define TFT_CS    10  // CS  -> GPIO10
+#define TFT_RST   3   // RES -> GPIO3
+#define TFT_DC    4   // DC  -> GPIO4
+#define TFT_MOSI  7   // SDA -> GPIO7 (MOSI)
+#define TFT_SCLK  6   // SCK -> GPIO6 (Clock)
+#define TFT_BL    1   // BL  -> GPIO1 (Backlight PWM)
 
-#endif // CONFIG_H
+// Colors
+#define COLOR_BG 0x0000
+#define COLOR_TEXT 0xFFFF
+#define COLOR_LINE 0xFFE0
+#define COLOR_TIME 0x07E0
+#define COLOR_TEMP 0xFD20  // Orange
+#define COLOR_SENSOR 0x07FF  // Cyan
+#define COLOR_GRAY 0x7BEF  // Gray for separator lines (RGB565: 127,127,127)
+
+#endif

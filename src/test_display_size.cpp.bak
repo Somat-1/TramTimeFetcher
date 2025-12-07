@@ -1,0 +1,99 @@
+// Test display size with concentric rectangles
+#include <Arduino.h>
+#include "wifi_mgr.h"
+#include "disp.h"
+#include "config.h"
+
+#define LED_PIN 8
+
+void setup() {
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH);
+    
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("\n\n=== Display Size Test ===");
+    
+    // Initialize display
+    initDisplay();
+    
+    // Fill with black
+    tft->fillScreen(ST77XX_BLACK);
+    delay(100);
+    
+    Serial.printf("Display reports size: %dx%d\n", tft->width(), tft->height());
+    
+    // Calculate center point
+    int centerX = tft->width() / 2;
+    int centerY = tft->height() / 2;
+    
+    Serial.printf("Center point: (%d, %d)\n", centerX, centerY);
+    
+    // Draw concentric rectangles from center outward
+    // Each rectangle grows by 10 pixels in each direction
+    uint16_t colors[] = {
+        ST77XX_RED,
+        ST77XX_ORANGE, 
+        ST77XX_YELLOW,
+        ST77XX_GREEN,
+        ST77XX_CYAN,
+        ST77XX_BLUE,
+        ST77XX_MAGENTA,
+        ST77XX_WHITE
+    };
+    
+    for (int i = 1; i <= 8; i++) {
+        int halfSize = i * 10;  // 10, 20, 30, 40, 50, 60, 70, 80
+        
+        int x = centerX - halfSize;
+        int y = centerY - halfSize;
+        int w = halfSize * 2;
+        int h = halfSize * 2;
+        
+        // Draw rectangle outline
+        tft->drawRect(x, y, w, h, colors[i-1]);
+        
+        // Draw number label at top-left corner of each rectangle
+        tft->setTextColor(colors[i-1]);
+        tft->setTextSize(1);
+        tft->setCursor(x + 2, y + 2);
+        tft->print(i);
+        
+        Serial.printf("Rectangle %d: pos=(%d,%d) size=%dx%d color=%d\n", 
+                     i, x, y, w, h, colors[i-1]);
+        
+        delay(200);
+    }
+    
+    // Draw center crosshair
+    tft->drawFastHLine(centerX - 5, centerY, 11, ST77XX_WHITE);
+    tft->drawFastVLine(centerX, centerY - 5, 11, ST77XX_WHITE);
+    
+    // Show dimensions at bottom
+    tft->setTextColor(ST77XX_WHITE);
+    tft->setTextSize(1);
+    tft->setCursor(2, tft->height() - 10);
+    tft->printf("%dx%d", tft->width(), tft->height());
+    
+    Serial.println("\n=== Test Complete ===");
+    Serial.println("Please identify which rectangle number fills the entire screen");
+    Serial.println("Rectangle dimensions:");
+    Serial.println("1: 20x20  (±10 from center)");
+    Serial.println("2: 40x40  (±20 from center)");
+    Serial.println("3: 60x60  (±30 from center)");
+    Serial.println("4: 80x80  (±40 from center)");
+    Serial.println("5: 100x100 (±50 from center)");
+    Serial.println("6: 120x120 (±60 from center)");
+    Serial.println("7: 140x140 (±70 from center)");
+    Serial.println("8: 160x160 (±80 from center)");
+}
+
+void loop() {
+    // Just blink LED to show we're alive
+    static unsigned long lastBlink = 0;
+    if (millis() - lastBlink >= 1000) {
+        lastBlink = millis();
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+    }
+    delay(100);
+}

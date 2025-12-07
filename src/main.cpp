@@ -1,164 +1,217 @@
-// filepath: /Users/tomasvalentinas/Documents/PlatformIO/Projects/TramReader/src/main.cpp
 #include <Arduino.h>
-#include <time.h>
+#include "wifi_mgr.h"
+#include "api.h"
+#include "disp.h"
 #include "config.h"
-#include "wifi_manager.h"
-#include "ov_api.h"
-#include "display_manager.h"
+#include "espnow_receiver.h"
+#include "weather.h"
+#include <time.h>
 
-// Global objects
-WiFiManager wifiManager(WIFI_POWER_DBM);
-OVApi ovApi(DRGL_BASE_URL, STOP_CODE);
-DisplayManager display;
+#define LED_PIN 8  // Onboard LED on ESP32-C3
 
-// State variables
 unsigned long lastUpdate = 0;
-unsigned long lastTouchCheck = 0;
-unsigned long lastTouchTime = 0;
-bool touchPressed = false;
-bool displayIsOn = false;
+unsigned long lastWeatherUpdate = 0;
+unsigned long lastBrightnessUpdate = 0;
+Weather currentWeather;
 
-void setupTime() {
-    // Configure time (Amsterdam timezone: CET/CEST)
-    configTime(3600, 3600, "pool.ntp.org", "time.nist.gov");
-    Serial.println("Waiting for NTP time sync...");
+void syncTime() {
+    Serial.println("Syncing time with NTP...");
+    // CET = UTC+1 (3600 seconds), DST offset = 3600 for summer (but not active in December)
+    // For Netherlands: use 3600 offset, 0 DST in winter, 3600 DST in summer
+    configTime(3600, 0, "pool.ntp.org", "time.nist.gov");  // CET timezone (UTC+1, no DST in December)
     
-    time_t now = time(nullptr);
+    Serial.print("Waiting for NTP time sync");
     int attempts = 0;
-    while (now < 8 * 3600 * 2 && attempts < 20) {
-        delay(500);
+    while (time(nullptr) < 100000 && attempts < 30) {
         Serial.print(".");
-        now = time(nullptr);
+        delay(500);
         attempts++;
     }
     Serial.println();
     
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo)) {
-        Serial.print("Current time: ");
-        Serial.println(asctime(&timeinfo));
-    }
-}
-
-void updateDepartures() {
-    Serial.println("\n=== Updating departures ===");
-    
-    if (ovApi.fetchDepartures()) {
-        ovApi.printDepartures();
-        
-        // Only update display if it's on
-        if (displayIsOn) {
-            display.showUpdating();
-            std::vector<Departure> departures = ovApi.getDepartures(MAX_DEPARTURES_DISPLAY);
-            display.showDepartures(departures);
-        }
-        lastUpdate = millis();
+    time_t now = time(nullptr);
+    if (now > 100000) {
+        struct tm* ti = localtime(&now);
+        Serial.printf("Time synced: %04d-%02d-%02d %02d:%02d:%02d (CET)\n", 
+                     ti->tm_year + 1900, ti->tm_mon + 1, ti->tm_mday,
+                     ti->tm_hour, ti->tm_min, ti->tm_sec);
     } else {
-        Serial.println("Failed to fetch departures");
-        if (displayIsOn) {
-            display.showError("Failed to fetch data");
-            delay(2000);
-        }
-    }
-}
-
-void handleTouch() {
-    if (display.isTouched()) {
-        Serial.println("Touch detected - turning on display for 5 minutes");
-        lastTouchTime = millis();
-        
-        if (!displayIsOn) {
-            display.turnOn();
-            displayIsOn = true;
-        }
-        
-        // Force immediate update
-        updateDepartures();
-    }
-}
-
-void checkDisplayTimeout() {
-    if (displayIsOn && (millis() - lastTouchTime > DISPLAY_TIMEOUT)) {
-        Serial.println("Display timeout - turning off");
-        display.turnOff();
-        displayIsOn = false;
+        Serial.println("WARNING: Time sync failed!");
     }
 }
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
+    Serial.println("\n\n=== TramReader Starting ===");
+    Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
     
-    Serial.println("\n\n=== Tram Times Display ===");
-    Serial.println("ESP32-C3 Supermini");
-    Serial.println("Statenkwartier, Den Haag\n");
-    
-    // Initialize display (touch sensor is initialized inside)
-    Serial.println("Initializing display...");
-    display.begin();
-    displayIsOn = true;  // Start with display on
-    lastTouchTime = millis();  // Set initial touch time
-    
-    display.showWelcomeScreen();
-    delay(2000);
-    
-    // Connect to WiFi
-    display.showConnecting();
-    if (wifiManager.connect(WIFI_SSID, WIFI_PASSWORD, LOCK_BSSID)) {
-        display.showConnected();
-        
-        // Setup time
-        setupTime();
-        
-        // Initial fetch
-        updateDepartures();
-    } else {
-        display.showError("WiFi connection failed");
-        Serial.println("Failed to connect to WiFi");
+    // Initialize LED pin and blink 3 times fast to show we're alive
+    pinMode(LED_PIN, OUTPUT);
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(LED_PIN, HIGH);
+        delay(100);
+        digitalWrite(LED_PIN, LOW);
+        delay(100);
     }
     
-    Serial.println("\n=== Display Configuration ===");
-    Serial.println("Display will turn off after 5 minutes of no touch");
-    Serial.println("Touch sensor on GPIO 20 to wake display");
-    Serial.println("Data updates every 5 seconds");
-    Serial.println("Times shown are -1 minute from scheduled");
-    Serial.println("==============================\n");
+    // Ensure LED is OFF after blinking
+    digitalWrite(LED_PIN, LOW);
+    
+    Serial.println("Initializing display...");
+    try {
+        initDisplay();
+        Serial.println("Display initialized successfully!");
+    } catch (...) {
+        Serial.println("ERROR: Display initialization failed!");
+        while(1) {
+            digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+            delay(100);  // Fast blink on error
+        }
+    }
+    
+    Serial.println("Showing startup message...");
+    showMessage("Starting...");
+    delay(1000);
+    
+    showMessage("WiFi...");
+    if (connectWiFi()) {
+        showMessage("Connected!");
+        Serial.println("WiFi OK");
+        
+        // Sync time after WiFi connection
+        showMessage("Sync time...");
+        syncTime();
+    } else {
+        showMessage("WiFi Failed");
+        Serial.println("WiFi Failed");
+    }
+    
+    delay(2000);
+    
+    // Initialize ESP-NOW receiver
+    showMessage("ESP-NOW...");
+    initESPNowReceiver();
+    delay(1000);
+    
+    // Fetch weather immediately on startup
+    showMessage("Weather...");
+    Serial.println("Fetching initial weather data...");
+    if (fetchWeather(currentWeather)) {
+        Serial.println("Weather data loaded successfully!");
+    } else {
+        Serial.println("Failed to fetch weather on startup");
+    }
+    delay(1000);
+    
+    // Ensure LED stays off after setup complete
+    digitalWrite(LED_PIN, LOW);
+    
+    Serial.println("Setup complete! LED should be off.");
+    Serial.printf("LED_PIN (GPIO%d) state: %d\n", LED_PIN, digitalRead(LED_PIN));
 }
 
 void loop() {
-    static unsigned long lastConnectionCheck = 0;
-    static int disconnectCount = 0;
+    // Keep LED off during normal operation
+    // Only blinked 3 times at startup
     
-    // Check WiFi connection every 5 seconds (not every loop)
-    unsigned long now = millis();
-    if (now - lastConnectionCheck > 5000) {
-        lastConnectionCheck = now;
-        
-        if (!wifiManager.isConnected()) {
-            disconnectCount++;
-            Serial.printf("\n!!! WiFi DISCONNECTED (count: %d) !!!\n", disconnectCount);
-            Serial.printf("Uptime: %.1f minutes\n", now / 60000.0);
-            Serial.printf("Last successful update: %.1f seconds ago\n", (now - lastUpdate) / 1000.0);
-            
-            if (displayIsOn) {
-                display.showError("WiFi disconnected");
-            }
-            wifiManager.reconnect();
-            delay(2000);
+    // Update brightness every 5 minutes (check if we crossed into/out of night mode)
+    if (millis() - lastBrightnessUpdate >= 5 * 60 * 1000) {
+        lastBrightnessUpdate = millis();
+        updateBrightnessForTime();
+    }
+    
+    // Check WiFi connection and reconnect if needed
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("⚠️  WiFi disconnected! Reconnecting...");
+        showMessage("WiFi lost...");
+        if (connectWiFi()) {
+            showMessage("Reconnected!");
+            delay(1000);
+        } else {
+            showMessage("WiFi failed!");
+            delay(5000);
             return;
         }
     }
     
-    // Auto-update every UPDATE_INTERVAL (5 seconds - fetch as often as possible)
-    if (millis() - lastUpdate > UPDATE_INTERVAL) {
-        updateDepartures();
+    // Update weather every 10 minutes
+    if (millis() - lastWeatherUpdate >= WEATHER_UPDATE_INTERVAL) {
+        lastWeatherUpdate = millis();
+        Serial.println("Fetching weather data...");
+        fetchWeather(currentWeather);
     }
     
-    // Check for manual update via touch
-    handleTouch();
-    
-    // Check if display should timeout
-    checkDisplayTimeout();
+    if (millis() - lastUpdate >= UPDATE_INTERVAL) {
+        lastUpdate = millis();
+        
+        Serial.println("\n========================================");
+        Serial.println("STARTING TRAM DATA FETCH");
+        Serial.printf("WiFi Status: %s (RSSI: %d dBm)\n", 
+                     WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected",
+                     WiFi.RSSI());
+        Serial.println("========================================");
+        
+        auto trams = fetchTrams();
+        
+        Serial.println("========================================");
+        if (!trams.empty()) {
+            Serial.printf("SUCCESS: Got %d trams, displaying now\n", trams.size());
+            
+            // Check what data we have available
+            bool hasWeather = currentWeather.valid;
+            
+            // Check for data from both sensors
+            bool hasOlga = hasSensorData(OLGA_MAC);
+            bool hasAE = hasSensorData(AE_MAC);
+            
+            // Get sensor data with age check (30 minutes)
+            sensor_data_t olgaData = {};
+            sensor_data_t aeData = {};
+            
+            if (hasOlga) {
+                unsigned long olgaAge = millis() - getLastReceivedTime(OLGA_MAC);
+                if (olgaAge < 30 * 60 * 1000) {
+                    olgaData = getSensorData(OLGA_MAC);
+                    Serial.printf("Olga data: S=%d%%, B=%d%% (age: %lu min)\n", 
+                                 olgaData.soilMoisture, olgaData.batteryPercent, olgaAge/60000);
+                } else {
+                    Serial.printf("Olga data too old (%lu min), not displaying\n", olgaAge/60000);
+                    hasOlga = false;
+                }
+            } else {
+                Serial.println("No data from Olga sensor yet");
+            }
+            
+            if (hasAE) {
+                unsigned long aeAge = millis() - getLastReceivedTime(AE_MAC);
+                if (aeAge < 30 * 60 * 1000) {
+                    aeData = getSensorData(AE_MAC);
+                    Serial.printf("A&E data: S=%d%%, B=%d%% (age: %lu min)\n", 
+                                 aeData.soilMoisture, aeData.batteryPercent, aeAge/60000);
+                } else {
+                    Serial.printf("A&E data too old (%lu min), not displaying\n", aeAge/60000);
+                    hasAE = false;
+                }
+            } else {
+                Serial.println("No data from A&E sensor yet");
+            }
+            
+            // Always show trams with weather and sensor sections (even if sensor data is missing)
+            if (hasWeather) {
+                Serial.println("Displaying: Trams + Weather + Multi-Sensor");
+                showTramsWithWeatherAndSensor(trams, currentWeather, olgaData, aeData, hasOlga, hasAE);
+            } else {
+                Serial.println("Displaying: Trams + Multi-Sensor (no weather yet)");
+                // For now, still show the full display even without weather
+                showTramsWithWeatherAndSensor(trams, currentWeather, olgaData, aeData, hasOlga, hasAE);
+            }
+        } else {
+            Serial.println("ERROR: No trams returned from API");
+            showDebugInfo("No data", getLastHttpCode(), getLastHtmlSize(), getLastFoundEntries());
+        }
+        Serial.println("========================================\n");
+    }
     
     delay(100);
 }
