@@ -165,13 +165,15 @@ void loop() {
             bool hasOlga = hasSensorData(OLGA_MAC);
             bool hasAE = hasSensorData(AE_MAC);
             
-            // Get sensor data with age check (30 minutes)
+            // Get sensor data with age check (7 hours - longer than 6 hour sensor cycle)
+            // This ensures data persists until next reading arrives
+            const unsigned long MAX_DATA_AGE = 7UL * 60UL * 60UL * 1000UL;  // 7 hours in milliseconds
             sensor_data_t olgaData = {};
             sensor_data_t aeData = {};
             
             if (hasOlga) {
                 unsigned long olgaAge = millis() - getLastReceivedTime(OLGA_MAC);
-                if (olgaAge < 30 * 60 * 1000) {
+                if (olgaAge < MAX_DATA_AGE) {
                     olgaData = getSensorData(OLGA_MAC);
                     Serial.printf("Olga data: S=%d%%, B=%d%% (age: %lu min)\n", 
                                  olgaData.soilMoisture, olgaData.batteryPercent, olgaAge/60000);
@@ -185,7 +187,7 @@ void loop() {
             
             if (hasAE) {
                 unsigned long aeAge = millis() - getLastReceivedTime(AE_MAC);
-                if (aeAge < 30 * 60 * 1000) {
+                if (aeAge < MAX_DATA_AGE) {
                     aeData = getSensorData(AE_MAC);
                     Serial.printf("A&E data: S=%d%%, B=%d%% (age: %lu min)\n", 
                                  aeData.soilMoisture, aeData.batteryPercent, aeAge/60000);
