@@ -165,9 +165,10 @@ void loop() {
             bool hasOlga = hasSensorData(OLGA_MAC);
             bool hasAE = hasSensorData(AE_MAC);
             
-            // Get sensor data with age check (7 hours - longer than 6 hour sensor cycle)
-            // This ensures data persists until next reading arrives
-            const unsigned long MAX_DATA_AGE = 7UL * 60UL * 60UL * 1000UL;  // 7 hours in milliseconds
+            // Get sensor data with age check (7 hours - sensors wake every 6 hours)
+            // Keep displaying data until next expected reading
+            const unsigned long MAX_DATA_AGE = 7UL * 60UL * 60UL * 1000UL; // 7 hours in milliseconds
+            
             sensor_data_t olgaData = {};
             sensor_data_t aeData = {};
             
